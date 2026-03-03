@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NWS — New Web Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --accent: #c8ff00;
+  --dark:   #080808;
+  --light:  #f0ede6;
+}
+
+html, body { height: 100%; }
+body {
+  font-family: 'Space Mono', monospace;
+  background: var(--dark);
+  cursor: none;
+  overflow-x: hidden;
+}
+
+/* Noise grain overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 100; opacity: .38;
+}
+
+/* ── Custom Cursor ── */
+#cursor, #cursor-ring {
+  position: fixed; pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+#cursor {
+  width: 8px; height: 8px;
+  background: var(--accent); border-radius: 50%; z-index: 999;
+  transition: background .3s;
+}
+#cursor-ring {
+  width: 40px; height: 40px;
+  border: 1px solid rgba(200,255,0,.3); border-radius: 50%; z-index: 998;
+  transition: width .32s ease, height .32s ease, border-color .32s ease;
+}
+
+/* ── DOM Intro Overlay ── */
+#intro-overlay {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 50;
+  transition: opacity .85s ease;
+}
+
+#nws-word {
+  display: flex; gap: 0.04em;
+  position: relative;
+}
+
+.iletter {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(140px, 24vw, 320px);
+  line-height: .88;
+  color: var(--light);
+  letter-spacing: -0.01em;
+  transition: color .05s;
+  user-select: none;
+}
+.iletter.on { color: var(--accent); }
+
+.acc-line {
+  position: absolute;
+  bottom: -14px; left: 0;
+  height: 1px; background: var(--accent);
+  width: 0;
+  transition: width .6s cubic-bezier(.16,1,.3,1) .4s;
+}
+.acc-line.show { width: 100%; }
+
+.itag {
+  font-size: clamp(9px, 1vw, 11px);
+  letter-spacing: .4em; text-transform: uppercase;
+  color: var(--light); opacity: 0;
+  margin-top: 32px;
+  transform: translateY(6px);
+  transition: opacity .7s .2s, transform .7s .2s;
+}
+.itag.show { opacity: .4; transform: translateY(0); }
+
+/* ── Corners ── */
+.corner {
+  position: fixed;
+  font-size: 9px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--light);
+  line-height: 1.8; z-index: 6; pointer-events: none;
+  opacity: 0; transition: opacity .8s, color .5s;
+}
+.corner.show { opacity: .2; }
+.corner-tl { top: 32px; left: 36px; }
+.corner-tr { top: 32px; right: 36px; text-align: right; }
+.corner-bl { bottom: 32px; left: 36px; }
+.corner-br { bottom: 32px; right: 36px; text-align: right; }
+
+/* ── Scroll hint ── */
+#scroll-hint {
+  position: fixed; bottom: 36px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px; letter-spacing: .3em;
+  text-transform: uppercase; color: var(--light);
+  opacity: 0; z-index: 6; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  transition: opacity .5s, color .5s;
+}
+#scroll-hint.show { opacity: .3; }
+#scroll-hint::after {
+  content: '';
+  width: 1px; height: 40px; background: var(--accent);
+  animation: sl 1.6s ease-in-out infinite;
+}
+@keyframes sl {
+  0%   { transform: scaleY(0); transform-origin: top; }
+  50%  { transform: scaleY(1); transform-origin: top; }
+  51%  { transform: scaleY(1); transform-origin: bottom; }
+  100% { transform: scaleY(0); transform-origin: bottom; }
+}
+
+/* ── Canvas scroll zone ── */
+#scroll-zone { height: 600vh; position: relative; }
+#sticky {
+  position: sticky; top: 0;
+  height: 100vh; width: 100%;
+  overflow: hidden;
+}
+#c {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  opacity: 0;
+}
+
+/* ── Final paragraph overlay ── */
+#para-overlay {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 8; pointer-events: none;
+  opacity: 0;
+  transition: opacity .5s ease;
+}
+.para-inner {
+  text-align: center; max-width: 660px; padding: 0 40px;
+}
+.para-header {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(68px, 7.8vw, 110px);
+  line-height: .9; color: var(--dark);
+  letter-spacing: .01em;
+  margin-bottom: 22px;
+}
+.para-accent-bar {
+  display: block; width: 40px; height: 2px;
+  background: var(--accent); margin: 0 auto 26px;
+}
+.para-body {
+  font-size: clamp(10px, 1.15vw, 14px);
+  line-height: 2.15; color: #505050;
+  letter-spacing: .025em;
+}
+.para-body strong {
+  color: var(--dark);
+  font-weight: 700;
+}
+.para-footer-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 18px; margin-top: 36px;
+}
+.para-cta {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-size: 9px; letter-spacing: .3em; text-transform: uppercase;
+  color: var(--dark); text-decoration: none;
+  pointer-events: auto;
+}
+.para-cta-line {
+  display: block; width: 36px; height: 1px;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+.para-cta:hover .para-cta-line { width: 60px; }
+</style>
+</head>
+<body>
+
+<div id="cursor"></div>
+<div id="cursor-ring"></div>
+
+<!-- Corners -->
+<div class="corner corner-tl">New Web Studio<br>Web Design & Dev</div>
+<div class="corner corner-tr">Est. 2024<br>nws.studio</div>
+<div class="corner corner-bl">© 2024 NWS</div>
+<div class="corner corner-br">— We Build What You Imagine</div>
+<div id="scroll-hint">Scroll</div>
+
+<!-- ══ DOM Intro Layer ══ -->
+<div id="intro-overlay">
+  <div id="nws-word">
+    <span class="iletter">N</span>
+    <span class="iletter">W</span>
+    <span class="iletter">S</span>
+    <div class="acc-line" id="acc-line"></div>
+  </div>
+  <div class="itag" id="itag">New Web Studio — We Build What You Imagine</div>
+</div>
+
+<!-- ══ Canvas Scroll Zone ══ -->
+<div id="scroll-zone">
+  <div id="sticky">
+    <canvas id="c"></canvas>
+  </div>
+</div>
+
+<!-- ══ Final Paragraph Overlay ══ -->
+<div id="para-overlay">
+  <div class="para-inner">
+    <h1 class="para-header">AT NWS</h1>
+    <span class="para-accent-bar"></span>
+    <p class="para-body">
+      We design <strong>scroll-driven, interactive websites</strong> built to captivate.<br>
+      From bold visual concepts to animated interfaces, we craft<br>
+      digital experiences that move — and move people.<br>
+      <br>
+      Custom animations. Immersive UI. Brand-defining design.<br>
+      <strong>We turn your vision into real digital work.</strong>
+    </p>
+    <div class="para-footer-row">
+      <a href="#" class="para-cta">
+        <span class="para-cta-line"></span>
+        Start a Project
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════════
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#!%$&';
+const NWS_TARGET = ['N', 'W', 'S'];
+
+// DOM intro
+const DOM_ROUNDS  = 12;
+const DOM_STEP_MS = 55;
+const DOM_DELAY   = 150;
+const DOM_PROX    = 200;
+
+// Canvas
+const MAX_P     = 650;
+const NWS_STEP  = 11;   // pixel sampling step for NWS
+const PARA_STEP = 4;    // pixel sampling step for paragraph
+
+// Scroll phase boundaries [start, end] in 0-1 scroll progress
+const PH_SCATTER = [0.08, 0.37];
+const PH_FLOAT   = [0.35, 0.67];
+const PH_GATHER  = [0.64, 1.00];
+const PH_BG      = [0.34, 0.84];
+
+// ══════════════════════════════════════════════
+//  ELEMENT REFS
+// ══════════════════════════════════════════════
+const cursorEl  = document.getElementById('cursor');
+const ringEl    = document.getElementById('cursor-ring');
+const introOv   = document.getElementById('intro-overlay');
+const nwsWord   = document.getElementById('nws-word');
+const iletters  = document.querySelectorAll('.iletter');
+const accLine   = document.getElementById('acc-line');
+const itag      = document.getElementById('itag');
+const corners   = document.querySelectorAll('.corner');
+const hintEl    = document.getElementById('scroll-hint');
+const scrollZ   = document.getElementById('scroll-zone');
+const canvas    = document.getElementById('c');
+const ctx       = canvas.getContext('2d');
+const paraOv    = document.getElementById('para-overlay');
+
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+let W, H;
+let particles    = [];
+let mouseX       = -9999, mouseY = -9999;
+let introComplete= false;
+let canvasReady  = false;
+let canvasActive = false;
+let domScrambling= false, domScrIv = null;
+let raf;
+
+let canvasReadyResolve;
+const canvasReadyP = new Promise(r => { canvasReadyResolve = r; });
+
+// ══════════════════════════════════════════════
+//  MATH HELPERS
+// ══════════════════════════════════════════════
+const rr      = Math.random.bind(Math);
+const rCh     = () => CHARS[0 | rr() * CHARS.length];
+const lerp    = (a, b, t) => a + (b - a) * t;
+const clamp   = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease3   = t => 1 - (1 - t) ** 3;
+const eIO3    = t => t < .5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+const eIn2    = t => t * t;
+function pProg(p, s, e) { return clamp((p - s) / (e - s), 0, 1); }
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = 0 | rr() * (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ══════════════════════════════════════════════
+//  PIXEL SAMPLING  — render text to offscreen canvas, collect lit pixels
+// ══════════════════════════════════════════════
+function samplePixels(drawFn, cW, cH, step) {
+  const off = Object.assign(document.createElement('canvas'), { width: cW, height: cH });
+  const c   = off.getContext('2d');
+  drawFn(c, cW, cH);
+  const d   = c.getImageData(0, 0, cW, cH).data;
+  const pts = [];
+  for (let y = 0; y < cH; y += step)
+    for (let x = 0; x < cW; x += step)
+      if (d[(y * cW + x) * 4 + 3] > 80) pts.push({ x, y });
+  return pts;
+}
+
+// ══════════════════════════════════════════════
+//  DOM INTRO SCRAMBLE  (replicates Code 1 exactly)
+// ══════════════════════════════════════════════
+function runDOMIntro() {
+  let done = 0;
+  iletters.forEach((span, i) => {
+    let f = 0;
+    setTimeout(() => {
+      const iv = setInterval(() => {
+        if (f < DOM_ROUNDS) {
+          span.textContent = rCh();
+          span.classList.add('on');
+          f++;
+        } else {
+          clearInterval(iv);
+          span.textContent = NWS_TARGET[i];
+          span.classList.remove('on');
+          done++;
+          if (done === iletters.length) {
+            setTimeout(() => {
+              introComplete = true;
+              itag.classList.add('show');
+              accLine.classList.add('show');
+              corners.forEach(c => c.classList.add('show'));
+              hintEl.classList.add('show');
+              initCanvas();          // start building canvas in background
+            }, 150);
+          }
+        }
+      }, DOM_STEP_MS);
+    }, i * DOM_DELAY);
+  });
+}
+
+// ══════════════════════════════════════════════
+//  DOM HOVER SCRAMBLE (while canvas not active)
+// ══════════════════════════════════════════════
+function startDOMSc() {
+  if (domScrambling) return;
+  domScrambling = true;
+  ringEl.style.width  = '62px';
+  ringEl.style.height = '62px';
+  ringEl.style.borderColor = 'rgba(200,255,0,.62)';
+  domScrIv = setInterval(() => {
+    iletters.forEach(s => { s.textContent = rCh(); s.classList.add('on'); });
+  }, DOM_STEP_MS);
+}
+
+function stopDOMSc() {
+  if (!domScrambling) return;
+  domScrambling = false;
+  ringEl.style.width  = '40px';
+  ringEl.style.height = '40px';
+  ringEl.style.borderColor = 'rgba(200,255,0,.3)';
+  clearInterval(domScrIv);
+  iletters.forEach((s, i) => {
+    setTimeout(() => { s.textContent = NWS_TARGET[i]; s.classList.remove('on'); }, i * 40);
+  });
+}
+
+// ══════════════════════════════════════════════
+//  CANVAS INIT  — sample NWS + paragraph, build particle array
+// ══════════════════════════════════════════════
+async function initCanvas() {
+  await document.fonts.ready;
+  await new Promise(r => setTimeout(r, 200));   // extra safety for Bebas Neue
+  resize();
+
+  // ── NWS sampling ──
+  const nwsFZ  = clamp(W * 0.24, 140, 320);
+  const nwsPts = samplePixels((c, w, h) => {
+    c.fillStyle = '#fff';
+    c.font = `${nwsFZ}px "Bebas Neue", Impact, sans-serif`;
+    c.textAlign    = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('NWS', w / 2, h / 2);
+  }, W, H, NWS_STEP);
+  shuffle(nwsPts);
+
+  // ── Paragraph sampling ──
+  const hdrFZ  = clamp(W * 0.074, 58, 108);
+  const bFZ    = clamp(W * 0.013, 10, 17);
+  const lH     = bFZ * 2.25;
+  const bLines = [
+    'We design scroll-driven,',
+    'interactive websites built',
+    'to captivate. Custom animations,',
+    'immersive UI, brand-defining design.',
+    'We turn your vision into',
+    'real digital work.',
+  ];
+  const totalH = hdrFZ * 1.1 + 32 + bLines.length * lH;
+
+  const paraPts = samplePixels((c, w, h) => {
+    c.fillStyle = '#fff';
+    let y = h / 2 - totalH / 2;
+    c.font = `${hdrFZ}px "Bebas Neue", Impact, sans-serif`;
+    c.textAlign    = 'center';
+    c.textBaseline = 'top';
+    c.fillText('AT NWS', w / 2, y);
+    y += hdrFZ * 1.1 + 28;
+    c.font = `700 ${bFZ}px "Space Mono", monospace`;
+    bLines.forEach(line => { c.fillText(line, w / 2, y); y += lH; });
+  }, W, H, PARA_STEP);
+  shuffle(paraPts);
+
+  const count = Math.min(nwsPts.length, paraPts.length, MAX_P);
+
+  // ── Build particles ──
+  particles = Array.from({ length: count }, (_, i) => {
+    const sp = nwsPts[i];
+    const ep = paraPts[i];
+    // Random scatter position spread across full screen
+    const angle = rr() * Math.PI * 2;
+    const dist  = Math.min(W, H) * (0.42 + rr() * 0.55);
+    const scx = clamp(W / 2 + Math.cos(angle) * dist, 30, W - 30);
+    const scy = clamp(H / 2 + Math.sin(angle) * dist, 30, H - 30);
+    return {
+      x: sp.x, y: sp.y,     // current position (start at NWS)
+      sx: sp.x, sy: sp.y,   // NWS target
+      scx, scy,             // scatter target
+      ex: ep.x, ey: ep.y,   // paragraph target
+      // Drift for float phase
+      dax: 22 + rr() * 52,
+      day: 22 + rr() * 52,
+      df:  0.38 + rr() * 1.1,
+      dph: rr() * Math.PI * 2,
+      // Scramble
+      char: rCh(),
+      ct:   0 | rr() * 24,
+    };
+  });
+
+  canvasReady = true;
+  canvasReadyResolve();
+}
+
+// ══════════════════════════════════════════════
+//  ACTIVATE CANVAS  — called on first scroll
+// ══════════════════════════════════════════════
+async function activateCanvas() {
+  if (canvasActive) return;
+  canvasActive = true;
+  stopDOMSc();
+
+  await canvasReadyP;    // wait if still sampling
+
+  // Fade out intro DOM layer
+  introOv.style.opacity      = '0';
+  introOv.style.pointerEvents= 'none';
+
+  // Fade in canvas
+  canvas.style.transition = 'opacity .75s ease';
+  canvas.style.opacity    = '1';
+
+  raf = requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════
+//  MAIN RENDER LOOP
+// ══════════════════════════════════════════════
+function loop(ts) {
+  raf = requestAnimationFrame(loop);
+
+  const scroll = getScroll();
+
+  // ── Phase progress ──
+  const scP = pProg(scroll, PH_SCATTER[0], PH_SCATTER[1]);
+  const flP = pProg(scroll, PH_FLOAT[0],   PH_FLOAT[1]);
+  const gaP = pProg(scroll, PH_GATHER[0],  PH_GATHER[1]);
+  const bgP = eIO3(pProg(scroll, PH_BG[0],  PH_BG[1]));
+
+  // ── Background ──
+  const bgR  = 0 | lerp(8,  240, bgP);
+  const bgG  = 0 | lerp(8,  237, bgP);
+  const bgBl = 0 | lerp(8,  230, bgP);
+  ctx.fillStyle = `rgb(${bgR},${bgG},${bgBl})`;
+  ctx.fillRect(0, 0, W, H);
+
+  const isDark = bgP < 0.5;
+
+  // ── Update UI elements ──
+  const cColor  = isDark ? 'rgb(240,237,230)' : 'rgb(14,14,14)';
+  const cOpacity= Math.max(0, 0.2 - scroll * 0.34).toFixed(3);
+  corners.forEach(c => { c.style.color = cColor; c.style.opacity = cOpacity; });
+  hintEl.style.color   = cColor;
+  hintEl.style.opacity = Math.max(0, 0.3 - scroll * 14).toFixed(3);
+  cursorEl.style.background = isDark ? '#c8ff00' : '#080808';
+  ringEl.style.borderColor  = isDark ? 'rgba(200,255,0,.35)' : 'rgba(8,8,8,.35)';
+
+  // ── Paragraph overlay crossfade ──
+  const paraShow = gaP > 0.78 ? ((gaP - 0.78) / 0.22).toFixed(3) : '0';
+  paraOv.style.opacity = paraShow;
+
+  // ── Scramble rate (frames between char changes; higher = slower scramble) ──
+  const scramDiv = (scP > 0 && scP < 1)
+    ? 3                                           // fast during scatter
+    : (gaP > 0)
+      ? Math.max(4, 0 | lerp(4, 9999, eIn2(gaP))) // slows → stops during gather
+      : 9;                                        // medium at rest
+
+  // ── Font setup ──
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  particles.forEach(p => {
+    // ════ Compute target position ════
+    let tx, ty;
+
+    if (scP <= 0) {
+      // ─ Phase 0: Hold at NWS ─
+      tx = p.sx; ty = p.sy;
+
+    } else if (gaP <= 0) {
+      // ─ Phase 1→2: Scatter + float ─
+      const sT  = eIO3(Math.min(scP, 1));
+      tx = lerp(p.sx, p.scx, sT);
+      ty = lerp(p.sy, p.scy, sT);
+
+      if (flP > 0) {
+        // Add organic drift during float
+        const fl = eIO3(flP);
+        tx += p.dax * Math.sin(ts * 0.00068 * p.df + p.dph) * fl;
+        ty += p.day * Math.cos(ts * 0.00058 * p.df + p.dph + 1.4) * fl;
+      }
+
+    } else {
+      // ─ Phase 3: Gather into paragraph ─
+      let fromX = p.scx;
+      let fromY = p.scy;
+      // Keep drift alive early in gather, then fade it
+      const dFade = Math.max(0, 1 - gaP * 3.5);
+      fromX += p.dax * Math.sin(ts * 0.00068 * p.df + p.dph) * dFade;
+      fromY += p.day * Math.cos(ts * 0.00058 * p.df + p.dph + 1.4) * dFade;
+      const gT = ease3(gaP);
+      tx = lerp(fromX, p.ex, gT);
+      ty = lerp(fromY, p.ey, gT);
+    }
+
+    // ════ Cursor attraction during float ════
+    if (flP > 0.08 && gaP < 0.15) {
+      const cdx   = mouseX - tx;
+      const cdy   = mouseY - ty;
+      const cDist = Math.sqrt(cdx * cdx + cdy * cdy);
+      const cR    = 200;
+      if (cDist < cR && cDist > 1) {
+        const f = (1 - cDist / cR) * 0.055 * eIO3(flP);
+        tx += cdx * f;
+        ty += cdy * f;
+      }
+    }
+
+    // ════ Smooth toward target (gentle lag) ════
+    p.x = lerp(p.x, tx, 0.072);
+    p.y = lerp(p.y, ty, 0.072);
+
+    // Off-screen cull
+    if (p.x < -30 || p.x > W + 30 || p.y < -30 || p.y > H + 30) return;
+
+    // ════ Scramble ════
+    p.ct++;
+    if (p.ct >= scramDiv) { p.char = rCh(); p.ct = 0; }
+
+    // ════ Size: larger at NWS phase, smaller once scattered ════
+    const charSz = scP < 0.05 ? 13 : 10;
+    ctx.font = `bold ${charSz}px "Space Mono", monospace`;
+
+    // ════ Color ════
+    let cr, cg, cb, alpha;
+    if (isDark) {
+      // Dark bg: white → accent tint during scatter burst
+      const aT = (scP > 0 && scP < 1) ? scP * 0.7 : 0;
+      cr = 0 | lerp(240, 200, aT);
+      cg = 0 | lerp(237, 255, aT);
+      cb = 0 | lerp(230,   0, aT);
+      alpha = gaP > 0.72 ? lerp(0.88, 0, (gaP - 0.72) / 0.28) : 0.88;
+    } else {
+      // Light bg: dark chars
+      cr = 20; cg = 20; cb = 20;
+      alpha = gaP > 0.72 ? lerp(0.78, 0, (gaP - 0.72) / 0.28) : 0.78;
+    }
+
+    if (alpha <= 0.01) return;
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},${alpha.toFixed(3)})`;
+    ctx.fillText(p.char, p.x, p.y);
+  });
+}
+
+// ══════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════
+function getScroll() {
+  const max = scrollZ.offsetHeight - H;
+  return max > 0 ? clamp(window.scrollY / max, 0, 1) : 0;
+}
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+// ══════════════════════════════════════════════
+//  RESIZE
+// ══════════════════════════════════════════════
+let resizeT;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(async () => {
+    resize();
+    if (canvasActive) {
+      canvasReady = false;
+      await initCanvas();
+    }
+  }, 420);
+});
+
+// ══════════════════════════════════════════════
+//  MOUSE
+// ══════════════════════════════════════════════
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursorEl.style.left = mouseX + 'px'; cursorEl.style.top = mouseY + 'px';
+  ringEl.style.left   = mouseX + 'px'; ringEl.style.top   = mouseY + 'px';
+
+  if (!introComplete || canvasActive) return;
+
+  // DOM hover scramble proximity check
+  const rect = nwsWord.getBoundingClientRect();
+  const cx   = rect.left + rect.width  / 2;
+  const cy   = rect.top  + rect.height / 2;
+  const dx   = Math.max(0, Math.abs(mouseX - cx) - rect.width  / 2);
+  const dy   = Math.max(0, Math.abs(mouseY - cy) - rect.height / 2);
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  dist < DOM_PROX ? startDOMSc() : stopDOMSc();
+});
+
+document.addEventListener('mouseleave', () => {
+  if (!canvasActive) stopDOMSc();
+});
+
+// ══════════════════════════════════════════════
+//  SCROLL → ACTIVATE CANVAS
+// ══════════════════════════════════════════════
+let firstScroll = true;
+window.addEventListener('scroll', () => {
+  if (firstScroll && introComplete) {
+    firstScroll = false;
+    activateCanvas();
+  }
+}, { passive: true });
+
+// ══════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════
+window.addEventListener('load', () => setTimeout(runDOMIntro, 350));
+</script>
+</body>
+</html>
+

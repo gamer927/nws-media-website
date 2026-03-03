@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NWS — New Web Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { background: #000; overflow-x: hidden; font-family: 'DM Sans', sans-serif; }
+
+  #scroll-track { height: 500vh; }
+
+  #stage {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  #bg { position: absolute; inset: 0; background: #000; z-index: 0; }
+
+  #particles { position: absolute; inset: 0; z-index: 1; }
+
+  .particle {
+    position: absolute;
+    font-family: 'Bebas Neue', sans-serif;
+    user-select: none;
+    pointer-events: none;
+    will-change: transform, font-size, color, opacity;
+    line-height: 1;
+    white-space: nowrap;
+    transform-origin: center center;
+  }
+
+  /* Ghost: hidden layout used only to measure char positions */
+  #ghost {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -999;
+    left: 8vw;
+    top: 50%;
+    transform: translateY(-45%);
+    width: 84vw;
+  }
+  #ghost-eyebrow {
+    display: block;
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(0.65rem, 0.9vw, 0.85rem);
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 1.8rem;
+  }
+  #ghost-heading {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3.5rem, 8vw, 9rem);
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+  }
+  #ghost-body {
+    font-family: 'DM Sans', sans-serif;
+    font-size: clamp(0.9rem, 1.2vw, 1.1rem);
+    font-weight: 300;
+    line-height: 1.8;
+    margin-top: 2.5rem;
+    max-width: 50ch;
+  }
+
+  /* Final visible text */
+  #final-text {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 0 8vw;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #final-text .eyebrow {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(0.65rem, 0.9vw, 0.85rem);
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: #000;
+    margin-bottom: 1.8rem;
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  #final-text h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(3.5rem, 8vw, 9rem);
+    line-height: 0.95;
+    color: #000;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.8s ease 0.12s, transform 0.8s ease 0.12s;
+  }
+  #final-text p {
+    font-family: 'DM Sans', sans-serif;
+    font-size: clamp(0.9rem, 1.2vw, 1.1rem);
+    font-weight: 300;
+    color: #111;
+    max-width: 50ch;
+    line-height: 1.8;
+    margin-top: 2.5rem;
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.7s ease 0.26s, transform 0.7s ease 0.26s;
+  }
+  #final-text .cta {
+    margin-top: 3rem;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #000;
+    border-bottom: 2px solid #000;
+    padding-bottom: 0.3rem;
+    cursor: pointer;
+    pointer-events: auto;
+    text-decoration: none;
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.7s ease 0.40s, transform 0.7s ease 0.40s;
+  }
+
+  #scroll-hint {
+    position: fixed;
+    bottom: 2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    z-index: 10;
+    transition: opacity 0.4s;
+  }
+  #scroll-hint span {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+  }
+  #scroll-hint .line {
+    width: 1px; height: 36px;
+    background: rgba(255,255,255,0.2);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%      { transform:scaleY(0); transform-origin:top; }
+    50%     { transform:scaleY(1); transform-origin:top; }
+    50.01%  { transform-origin:bottom; }
+    100%    { transform:scaleY(0); transform-origin:bottom; }
+  }
+</style>
+</head>
+<body>
+
+<div id="scroll-track"></div>
+
+<div id="stage">
+  <div id="bg"></div>
+  <div id="particles"></div>
+
+  <div id="ghost">
+    <span id="ghost-eyebrow">New Web Studio</span>
+    <div id="ghost-heading">Take website creation<br>to the next level</div>
+    <div id="ghost-body">Tell us your idea and we will make it happen. We want to expand your creativity and design.</div>
+  </div>
+
+  <div id="final-text">
+    <span class="eyebrow">New Web Studio</span>
+    <h1>Take website<br>creation to the<br>next level</h1>
+    <p>Tell us your idea and we will make it happen. We want to expand your creativity and design.</p>
+    <a class="cta" href="#">Start your project →</a>
+  </div>
+</div>
+
+<div id="scroll-hint">
+  <span>Scroll</span>
+  <div class="line"></div>
+</div>
+
+<script>
+// ─── CONFIG ─────────────────────────────────────────────────────────────────
+const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#!%&';
+const LETTERS = ['N','W','S'];
+const PER_LETTER = 17;
+const TOTAL = LETTERS.length * PER_LETTER; // 51
+
+const P1_END  = 0.28;   // scatter done
+const P2_END  = 0.72;   // compile + transition done
+const P3_END  = 0.90;   // particles fade, text in
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+let particles = [];
+let targets   = [];     // compile targets {x,y,size,char}
+let tick = 0;
+let lastP = -1;
+let revealed = false;
+let raf;
+
+// ─── MATH ───────────────────────────────────────────────────────────────────
+const lerp  = (a,b,t) => a+(b-a)*t;
+const clamp = (v,a,b) => Math.min(Math.max(v,a),b);
+const norm  = (v,a,b) => clamp((v-a)/(b-a),0,1);
+const eio   = t => t<.5?2*t*t:-1+(4-2*t)*t;
+const eout  = t => 1-Math.pow(1-t,3);
+const rand  = (a,b) => a+Math.random()*(b-a);
+const rchar = () => GLYPHS[Math.floor(Math.random()*GLYPHS.length)];
+
+// ─── MEASURE GHOST TEXT ─────────────────────────────────────────────────────
+// Walk text nodes, measure bounding rect of individual chars using Range API
+function charPositions(rootEl, maxPick) {
+  const results = [];
+  const allText = rootEl.textContent.replace(/\s+/g,' ').trim();
+
+  // Collect all text-node leaf info
+  const leaves = [];
+  (function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) { leaves.push(node); }
+    else node.childNodes.forEach(walk);
+  })(rootEl);
+
+  let globalIdx = 0;
+  for (const leaf of leaves) {
+    for (let i = 0; i < leaf.length; i++) {
+      const ch = leaf.textContent[i];
+      if (ch.trim() === '') { globalIdx++; continue; }
+      try {
+        const range = document.createRange();
+        range.setStart(leaf, i);
+        range.setEnd(leaf, i+1);
+        const r = range.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          results.push({ x: r.left+r.width/2, y: r.top+r.height/2, ch: ch.toUpperCase() });
+        }
+      } catch(_) {}
+      globalIdx++;
+    }
+  }
+  return results;
+}
+
+function measureTargets() {
+  targets = [];
+
+  const headingEl = document.getElementById('ghost-heading');
+  const bodyEl    = document.getElementById('ghost-body');
+
+  const headingFS = parseFloat(getComputedStyle(headingEl).fontSize);
+  const bodyFS    = parseFloat(getComputedStyle(bodyEl).fontSize);
+
+  const headingChars = charPositions(headingEl);
+  const bodyChars    = charPositions(bodyEl);
+
+  // Pick evenly-spaced samples so particles spread across the full text shape
+  function sample(arr, n) {
+    if (arr.length === 0) return [];
+    const out = [];
+    const step = arr.length / n;
+    for (let i = 0; i < n; i++) {
+      out.push(arr[Math.min(Math.floor(i*step), arr.length-1)]);
+    }
+    return out;
+  }
+
+  const headingPick = 35;
+  const bodyPick    = TOTAL - headingPick;
+
+  const hSampled = sample(headingChars, headingPick);
+  const bSampled = sample(bodyChars, bodyPick);
+
+  hSampled.forEach(c => targets.push({ x:c.x, y:c.y, size:headingFS*0.88, char:c.ch }));
+  bSampled.forEach(c => targets.push({ x:c.x, y:c.y, size:bodyFS,        char:c.ch }));
+
+  // Pad if short
+  while (targets.length < TOTAL) targets.push(targets[targets.length-1]);
+  targets = targets.slice(0, TOTAL);
+}
+
+// ─── BUILD DOM PARTICLES ────────────────────────────────────────────────────
+function buildParticles() {
+  const W  = window.innerWidth;
+  const H  = window.innerHeight;
+  const cx = W * 0.5;
+  const cy = H * 0.5;
+
+  const container = document.getElementById('particles');
+  container.innerHTML = '';
+  particles = [];
+
+  LETTERS.forEach((letter, li) => {
+    for (let i = 0; i < PER_LETTER; i++) {
+      const idx = li * PER_LETTER + i;
+      const el  = document.createElement('div');
+      el.className = 'particle';
+      container.appendChild(el);
+
+      // Origin: one large letter per N/W/S, horizontally spread
+      const originX = W * (0.22 + li * 0.28);
+      const originY = cy;
+
+      // Scatter: tight ring around screen center (max 22% of vw radius)
+      const angle   = (i / PER_LETTER) * Math.PI * 2 + li * 1.05 + rand(-0.25, 0.25);
+      const radius  = rand(W * 0.05, W * 0.22);
+      const scatterX = clamp(cx + Math.cos(angle)*radius,      W*0.10, W*0.90);
+      const scatterY = clamp(cy + Math.sin(angle)*radius*0.65, H*0.12, H*0.88);
+
+      const tgt = targets[idx] || { x:cx, y:cy, size:14, char:letter };
+
+      particles.push({
+        el, letter,
+        originX, originY,
+        scatterX, scatterY,
+        compileX: tgt.x,
+        compileY: tgt.y,
+        compileSize: tgt.size,
+        compileChar: tgt.char,
+        li, idx,
+        sOff:  rand(0, 100),
+        sSpd:  rand(0.09, 0.22),
+        initRot: rand(-18, 18),
+      });
+    }
+  });
+}
+
+// ─── SCRAMBLE CHAR ──────────────────────────────────────────────────────────
+function scram(p, intensity) {
+  if (intensity < 0.02) return p.compileChar;
+  return Math.sin(tick * p.sSpd + p.sOff) > (1 - intensity) * 1.5 - 0.75
+    ? rchar()
+    : p.compileChar;
+}
+
+// ─── RENDER LOOP ────────────────────────────────────────────────────────────
+function render(progress) {
+  tick++;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+
+  document.getElementById('scroll-hint').style.opacity = progress > 0.03 ? '0' : '1';
+
+  // ── PHASE 1: Scatter (0 → P1_END) ─────────────────────────────────────
+  if (progress <= P1_END) {
+    document.getElementById('bg').style.background = '#000';
+    document.getElementById('final-text').style.opacity = '0';
+
+    const t = norm(progress, 0, P1_END);
+    particles.forEach(p => {
+      const delay = (p.idx / TOTAL) * 0.32;
+      const lt    = eout(clamp(norm(t, delay, delay+0.68), 0, 1));
+
+      const bigSize  = H * (p.li===1 ? 0.60 : 0.53);
+      const tinySize = rand(9,17);
+      const size     = lerp(bigSize, tinySize, lt);
+
+      const isFirst  = (p.idx % PER_LETTER) === 0;
+      const opacity  = isFirst ? 1 : clamp(lt*4, 0, 1);
+
+      const x   = lerp(p.originX, p.scatterX, lt);
+      const y   = lerp(p.originY, p.scatterY, lt);
+      const rot = lerp(0, p.initRot, lt);
+      const ch  = lt > 0.15 ? rchar() : p.letter;
+
+      p.el.style.cssText =
+        `font-size:${size}px;left:${x-size*0.28}px;top:${y-size*0.42}px;` +
+        `opacity:${opacity};color:#fff;transform:rotate(${rot}deg);`;
+      p.el.textContent = ch;
+    });
+  }
+
+  // ── PHASE 2: Compile into text layout + bg shift (P1_END → P2_END) ────
+  else if (progress <= P2_END) {
+    const t  = norm(progress, P1_END, P2_END);
+    const te = eio(t);
+
+    const bv = Math.round(lerp(0, 255, te));
+    document.getElementById('bg').style.background = `rgb(${bv},${bv},${bv})`;
+    document.getElementById('final-text').style.opacity = '0';
+
+    particles.forEach(p => {
+      const delay = (p.idx / TOTAL) * 0.38;
+      const lt    = eout(clamp(norm(t, delay, delay+0.62), 0, 1));
+
+      // Move from scatter pos → exact character position in text layout
+      const x    = lerp(p.scatterX, p.compileX, lt);
+      const y    = lerp(p.scatterY, p.compileY, lt);
+      const size = lerp(13, p.compileSize * 0.9, lt);
+      const rot  = lerp(p.initRot, 0, lt);
+
+      // Color: white → black with bg
+      const cv   = Math.round(lerp(255, 0, te));
+      // Scramble slows as particles lock into position
+      const intensity = 1 - Math.pow(lt, 1.8);
+      const ch   = scram(p, intensity);
+
+      p.el.style.cssText =
+        `font-size:${size}px;left:${x-size*0.28}px;top:${y-size*0.42}px;` +
+        `opacity:1;color:rgb(${cv},${cv},${cv});transform:rotate(${rot}deg);`;
+      p.el.textContent = ch;
+    });
+  }
+
+  // ── PHASE 3: Scramble stops → particles dissolve → text appears ────────
+  else {
+    const t = norm(progress, P2_END, P3_END);
+    document.getElementById('bg').style.background = '#fff';
+
+    const fadeOut = 1 - eout(t);
+    particles.forEach(p => {
+      const size = p.compileSize * 0.9;
+      p.el.style.cssText =
+        `font-size:${size}px;left:${p.compileX-size*0.28}px;top:${p.compileY-size*0.42}px;` +
+        `opacity:${fadeOut};color:#000;transform:rotate(0deg);`;
+      p.el.textContent = p.compileChar; // locked — no more scrambling
+    });
+
+    // Crossfade to real text
+    const textIn = eout(norm(progress, P2_END+0.06, P3_END));
+    document.getElementById('final-text').style.opacity = textIn;
+
+    if (t > 0.12 && !revealed) { revealed = true; revealText(); }
+    if (t < 0.05 && revealed)  { revealed = false; hideText(); }
+  }
+}
+
+function revealText() {
+  document.querySelectorAll('#final-text .eyebrow,#final-text h1,#final-text p,#final-text .cta')
+    .forEach((el,i) => setTimeout(() => {
+      el.style.opacity   = '1';
+      el.style.transform = 'translateY(0)';
+    }, i * 110));
+}
+function hideText() {
+  document.querySelectorAll('#final-text .eyebrow,#final-text h1,#final-text p,#final-text .cta')
+    .forEach(el => {
+      el.style.transition = 'none';
+      el.style.opacity    = '0';
+      el.style.transform  = 'translateY(14px)';
+      requestAnimationFrame(() => { el.style.transition = ''; });
+    });
+}
+
+// ─── SCROLL ─────────────────────────────────────────────────────────────────
+function onScroll() {
+  const max  = document.getElementById('scroll-track').offsetHeight - window.innerHeight;
+  const p    = clamp(window.scrollY / max, 0, 1);
+  if (Math.abs(p - lastP) < 0.0004) return;
+  lastP = p;
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => render(p));
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+function init() {
+  // Two rAF frames so fonts and layout are fully settled before measuring
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    measureTargets();
+    buildParticles();
+    render(0);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', () => {
+      measureTargets();
+      buildParticles();
+      render(lastP < 0 ? 0 : lastP);
+    });
+  }));
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
